@@ -1,0 +1,229 @@
+!#/bin/bash
+#check root user or not
+
+if [[ $UID == 0 ]]
+then
+	echo "user is a root user"
+else
+	echo "user is not a root user"	
+	exit 1
+fi
+
+########update need first####################
+apt-get updaate 
+
+if [[ $? == 0 ]]
+then
+	echo "update successfully"
+else
+	echo "update not successfully"
+	exit 1
+fi
+
+################install mvn###########
+apt-get install -y maven 
+
+if [[ $? == 0 ]]
+then
+	echo "update successfully"
+else
+	echo "update not successfully"
+	exit 1
+fi
+
+########maven test #########################
+mvn test
+
+if [[ $? == 0 ]]
+then
+	echo "mvn test successfully"
+else
+	echo "mvn test fail"
+	exit 1
+fi
+
+#######create package##########################
+mvn package
+if [[ $? == 0 ]]
+then
+	echo "mvn package successfully"
+else
+	echo "mvn test fail"
+	exit 1
+fi
+
+########################install tomcat9####################
+apt-get install -y tomcat9
+
+if [[ $? == 0 ]]
+then
+	echo "install  successfully"
+else
+	echo "install not successfully"
+	exit 1
+fi
+
+##########################copy source file##################
+cp -rf target/hello-world-0.0.1-SNAPSHOT.war /var/lib/tomcat9/webapps/${APP_CONTEXT}.war
+
+if [[ $? == 0 ]]
+then
+	echo "copy successfully"
+else
+	echo "copy not successfully"
+	exit 1
+fi
+
+
+==================================
+#!/bin/bash
+
+function installPackage() {
+    local packagename=${1}
+    yum install -y "$packagename"
+    if [ $? -ne 0 ]; then
+        echo "The installation of $packagename failed."
+    fi
+}
+function mavenTarget ()  {
+    local mavenCmd=${1}
+    yum install -y "$mavenCmd"
+    if [ $? -ne 0 ]; then
+        echo "The installation of $mavenCmd failed."
+    fi    
+}
+#user is root or not
+if [[ $UID -ne 0 ]]
+then
+        echo "user is not a root user"
+        exit
+fi
+#on which path want to access application ,take input from user
+echo -e "\nEnter path on you want to  access application "
+read -p  APP_CONTEXT
+APP_CONTEXT=${APP_CONTEXT:-app}
+
+# Example usage
+installPackage maven
+installPackage tomcat9
+mavenTarget test
+mavenTarget package
+
+#copy code
+if  cp -rvf target/hello-world-0.0.1-SNAPSHOT.war /var/lib/tomcat9/webapps/${APP_CONTEXT}.war
+then
+echo "app deploy successfully you can access it on http://$(hostname -I | awk '{print $1}')/${APP_CONTEXT}"
+else
+echo "getting some error"
+fi
+exit
+
+
+############################################################################################
+#############################################################################################
+
+
+## Capturing Master Node IP
+master_ip_addr=`dse client-tool -u dsecomputeengineuser -p Kr0n0s@Cloud spark leader-address`
+
+sleep 8
+
+echo -e "\n**** Master Node IP => ${master_ip_addr} ****\n**** Master Node Hostname => $(sshpass -p dseuser ssh -o StrictHostKeyChecking=no -o LogLevel=error dseuser@${master_ip_addr} 'hostname -s') ****\n"
+
+
+## Current Node IP address to match if it matches with master node to perform restart
+current_node_ip=$(hostname -i)
+
+if [[ ${current_node_ip} != ${master_ip_addr} ]]; then 
+echo -e "\n**** THIS IS NOT  MASTER NODE. NOT PROCEEDING AHEAD WITH KPI RESTART ****\n"; 
+exit 0
+else 
+
+unstable="The KPI application is UNSTABLE, Please run stop action and then start the application again."
+running="The KPI application is RUNNING."
+stopped="The KPI application is STOPPED (or UNAVAILABLE)."
+ 
+echo -e "\n**** THIS IS MASTER NODE. PROCEEDING AHEAD WITH REST OF SCRIPT EXECUTION ****\n"
+ 
+## Getting current state of KPI Realtime/Batch cluster before KPI APP restart
+curl -u dsecomputeengineuser:Kr0n0s@Cloud -X GET ${master_ip_addr}:7080/json/ > /tmp/sparkuioutput_stg 2>/tmp/stdoutput_stg
+
+
+current_activedrivers=`jq '.activedrivers[].id' /tmp/sparkuioutput_stg | sed -e 's/^"//' -e 's/"$//'`
+submitdate=`jq '.activeapps[].submitdate' /tmp/sparkuioutput_stg`
+activeapps=`jq '.activeapps[].id' /tmp/sparkuioutput_stg | sed -e 's/^"//' -e 's/"$//'`
+app_state=`jq '.activeapps[].state' /tmp/sparkuioutput_stg`
+
+
+echo -e "\n***** STATE BEFORE RESTART *****\n"
+echo -e "\n***** CURRENT RUNNING DRIVER ID => ${current_activedrivers} *****\n***** RUNNING APPLICATION ID => ${activeapps} *****\n***** APPLICATION STATE => ${app_state} *****\n***** APPLICATION SUBMIT DATE => ${submitdate} *****\n"
+
+## Stopping KPI APP by killing Running Driver
+echo -e "\n***** STOPPING KPI APPLICATION BY KIILING DRIVER *****\n"
+#curl -u dsecomputeengineuser:Kr0n0s@Cloud -X POST  ${master_ip_addr}:7080/driver/kill/ -d "id=${current_activedrivers}&terminate=true"
+
+cd /apps/kpi_framework/ && ./kpi_app.sh stop
+
+sleep 20
+
+## Checking status of KPI APP
+echo -e "\n***** CHECHKING STATE OF KPI APP AFTER KILLING DRIVER *****\n"
+cd /apps/kpi_framework/ && ./kpi_app.sh status
+
+sleep 10
+
+## Starting KPI APP
+echo -e "\n***** STARTING KPI APP *****\n"
+cd /apps/kpi_framework/ && ./kpi_app.sh start
+
+sleep 30
+
+## Checking status of KPI APP
+echo -e "\n***** CHECHKING STATE OF KPI APP AFTER INITIATING START SCRIPT *****\n"
+cd /apps/kpi_framework/ && ./kpi_app.sh status
+
+
+rm -rf /tmp/sparkuioutput_stg /tmp/stdoutput_stg
+
+## Getting current state of KPI Realtime/Batch cluster after KPI APP restart
+curl -u dsecomputeengineuser:Kr0n0s@Cloud -X GET ${master_ip_addr}:7080/json/ > /tmp/sparkuioutput_stg 2>/tmp/stdoutput_stg
+
+new_activedrivers=`jq '.activedrivers[].id' /tmp/sparkuioutput_stg | sed -e 's/^"//' -e 's/"$//'`
+submitdate=`jq '.activeapps[].submitdate' /tmp/sparkuioutput_stg`
+activeapps=`jq '.activeapps[].id' /tmp/sparkuioutput_stg | sed -e 's/^"//' -e 's/"$//'`
+app_state=`jq '.activeapps[].state' /tmp/sparkuioutput_stg`
+
+if [ -z "$activeapps" ]; then
+
+echo -e "\n***** KPI APP DIDN'T START SUCCESSFULLY. KINDLY CHECK MANUALLY. *****\n"
+echo -e "\n***** KPI RESTART FAILED *****\n"
+echo -e "\n***** RUNNING DRIVER ID => ${new_activedrivers} *****\n***** RUNNING APPLICATION ID => ${activeapps} *****\n***** APPLICATION STATE => ${app_state} *****\n***** APPLICATION SUBMIT DATE => ${submitdate} *****\n"
+
+echo -e "\n***** WAITING FOR 1 MINUTE MORE TO CHECK IF KPI APP HAS STARTED OR NOT. *****\n"
+sleep 60
+
+rm -rf /tmp/sparkuioutput_stg /tmp/stdoutput_stg
+
+curl -u dsecomputeengineuser:Kr0n0s@Cloud -X GET ${master_ip_addr}:7080/json/ > /tmp/sparkuioutput_stg 2>/tmp/stdoutput_stg
+
+new_activedrivers=`jq '.activedrivers[].id' /tmp/sparkuioutput_stg | sed -e 's/^"//' -e 's/"$//'`
+submitdate=`jq '.activeapps[].submitdate' /tmp/sparkuioutput_stg`
+activeapps=`jq '.activeapps[].id' /tmp/sparkuioutput_stg | sed -e 's/^"//' -e 's/"$//'`
+app_state=`jq '.activeapps[].state' /tmp/sparkuioutput_stg`
+
+if [ -z "$activeapps" ]; then
+echo -e "\n***** KPI APP DIDN'T START SUCCESSFULLY. KINDLY CHECK MANUALLY. *****\n"
+echo -e "\n***** KPI RESTART FAILED *****\n"
+echo -e "\n***** RUNNING DRIVER ID => ${new_activedrivers} *****\n***** RUNNING APPLICATION ID => ${activeapps} *****\n***** APPLICATION STATE => ${app_state} *****\n***** APPLICATION SUBMIT DATE => ${submitdate} *****\n"
+
+exit 1
+fi
+
+else
+
+echo -e "\n***** STATE AFTER SUCCESSFULL RESTART *****\n"
+echo -e "\n***** RUNNING DRIVER ID => ${new_activedrivers} *****\n***** RUNNING APPLICATION ID => ${activeapps} *****\n***** APPLICATION STATE => ${app_state} *****\n***** APPLICATION SUBMIT DATE => ${submitdate} *****\n"
+
+
+fi
+fi
