@@ -1,0 +1,58 @@
+#!/bin/bash
+
+function installPakcges() {
+	local packageName=${1}
+	apt-get install -y ${packageName}
+	if [[ $? == 0 ]]
+    then
+		echo "not albe to installed ${packageName}"
+	    exit 1
+	fi
+}
+
+###############second function for maven #############
+function mavenTarget() {
+	local mavenCmd=${1}
+	mvn ${mavenCmd}
+	if [[ $? != 0 ]]
+	then
+		echo "${mavenCmd} test fail"
+		exit 1
+	fi
+}
+
+###############check root user root or not
+
+if [[ $UID != 0 ]]
+then
+	echo "user is not a root user"	
+	exit 1
+fi
+
+########update need first####################
+apt-get updaate 
+
+if [[ $? != 0 ]]
+then
+	echo "update not successfully"
+	exit 1
+fi
+
+#####################call function to install packages##########
+installPakcges maven
+installPakcges tomcat9
+mavenTarget test
+mavenTarget Package
+
+
+##########################copy source file##################
+cp -rf target/hello-world-0.0.1-SNAPSHOT.war /var/lib/tomcat9/webapps/app.war
+
+if [[ $? == 0 ]]
+then
+	echo "copy successfully"
+else
+	echo "copy not successfully"
+	exit 1
+fi
+
