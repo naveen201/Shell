@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# Set the source directory to backup
+source_dir="/path/to/your/source/directory"
+
+# Set the backup destination directory
+backup_dir="/path/to/your/backup/directory"
+
+# Get yesterday's date in YYYY-MM-DD format
+yesterday=$(date --date="yesterday" +"%Y-%m-%d")
+
+# Create the backup directory if it doesn't exist
+mkdir -p "$backup_dir/$yesterday"
+
+# Include a timestamp in the log message
+timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+# Find and backup modified files using rsync
+find "$source_dir" -type f -mtime -1 -exec rsync -av {} "$backup_dir/$yesterday/" \; >> /var/log/backup.log 2>&1
+
+# Verify if any files were backed up
+if [ "$(ls -A "$backup_dir/$yesterday")" ]; then
+  echo "$timestamp - Backup completed. Files backed up to: $backup_dir/$yesterday" >> /var/log/backup.log
+else
+  echo "$timestamp - No files modified in the last 24 hours. Skipping backup." >> /var/log/backup.log
+  rmdir "$backup_dir/$yesterday"  # Remove empty backup directory
+fi
