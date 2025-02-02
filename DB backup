@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Set variables
+DB_HOST="localhost"
+DB_USER="username"
+DB_PASS="password"
+DB_NAME="database_name"
+BACKUP_DIR="/path/to/backup/directory"
+DATE=$(date +"%Y%m%d%H%M")
+
+# Create a backup
+echo "Starting backup of database $DB_NAME..."
+mysqldump -h $DB_HOST -u $DB_USER -p$DB_PASS $DB_NAME > $BACKUP_DIR/db_backup_$DATE.sql
+
+# Compress the backup file
+echo "Compressing backup file..."
+gzip $BACKUP_DIR/db_backup_$DATE.sql
+
+# Remove old backups (older than 7 days)
+echo "Cleaning up old backups..."
+find $BACKUP_DIR -type f -name "*.gz" -mtime +7 -exec rm {} \;
+
+echo "Backup completed successfully!"
