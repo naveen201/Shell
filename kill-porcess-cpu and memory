@@ -1,0 +1,22 @@
+ps aux --sort=-%mem | awk '$4 > 1 {print $2}'
+ps aux --sort=-%cpu | awk '$3 > .1 {print $2}'
+
+============
+#!/bin/bash
+
+# Get the process IDs of processes using more than 90% memory
+processes_to_kill=$(ps aux --sort=-%mem | awk '$4 > 90 {print $2}')
+
+# Check if there are any processes to kill
+if [ -z "$processes_to_kill" ]; then
+  echo "No processes are consuming more than 90% memory."
+else
+  # Kill the processes
+  echo "Killing the following processes:"
+  echo "$processes_to_kill"
+  
+  for pid in $processes_to_kill; do
+    kill -9 $pid
+    echo "Process $pid has been killed."
+  done
+fi
